@@ -46,35 +46,37 @@ For all cases below, the following settings are fixed: `N = 512`, `xi = 0`, `res
 ### Burgers' sine wave, `problem = 'burgers'`
 This is simply a sine wave which develops a standing shock at x = pi. Over time, the shock will slowly dissipate.
 
-`timeDiffScheme = 'RK'`
-`timeOrdAcc = 4`
-`nonlinDiffScheme = 'upwind'`
-`nonlinOrdAcc = 1`
-`linOrdAcc = 2`
-`xf = 2.*math.pi`
-`ICType = 'sin'`
-`angFreq = '1.'
-`tEnd = 2.`
-`dt = 1.e-3`
-`viscosity = 5.e-3`
+```python
+timeDiffScheme = 'RK'
+timeOrdAcc = 4
+nonlinDiffScheme = 'upwind'
+nonlinOrdAcc = 1
+linOrdAcc = 2
+xf = 2.*math.pi
+ICType = 'sin'
+angFreq = '1.'
+tEnd = 2.
+dt = 1.e-3
+viscosity = 5.e-3
 
 ### Kuramoto-Sivashinsky chaos, `problem = 'ks'`
 This problem displays how smooth initial conditions with relatively small magnitude will eventually develop bounded, large-magnitude, small scale fluctuations. Although the fluctuations appear random, the K-S equation is entirely deterministic. However, the solution is extremely sensitive to small perturbations in the initial conditions. If you would like to test this, simply add a small amount of random noise to the initial conditions (on the order of 1e-8) and observe how the final solution differs after a long time period.
 
 Note that this equation produces an extremely stiff linear system and generally requires an implicit time stepping solution to solve in a reasonable amount of time. You are welcome to use the Runge-Kutta scheme, but it will require an extremely small time step to ensure numerical stability.
 
-`timeDiffScheme = 'BDF'`
-`timeOrdAcc = 2`
-`nonlinDiffScheme = 'central'`
-`nonlinOrdAcc = 2`
-`linOrdAcc = 2`
-`xf = 32.*math.pi`
-`ICType = 'mixedSinCos'`
-`angFreq = '1./16.'
-`tEnd = 150.`
-`dt = 1.e-2`
-`viscosity = 1.`
-
+```python
+timeDiffScheme = 'BDF'
+timeOrdAcc = 2
+nonlinDiffScheme = 'central'
+nonlinOrdAcc = 2
+linOrdAcc = 2
+xf = 32.*math.pi
+ICType = 'mixedSinCos'
+angFreq = '1./16.'
+tEnd = 150.
+dt = 1.e-2
+viscosity = 1.
+```
 
 
 
