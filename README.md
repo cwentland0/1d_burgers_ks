@@ -58,6 +58,7 @@ angFreq = '1.'
 tEnd = 2.
 dt = 1.e-3
 viscosity = 5.e-3
+```
 
 ### Kuramoto-Sivashinsky chaos, `problem = 'ks'`
 This problem displays how smooth initial conditions with relatively small magnitude will eventually develop bounded, large-magnitude, small scale fluctuations. Although the fluctuations appear random, the K-S equation is entirely deterministic. However, the solution is extremely sensitive to small perturbations in the initial conditions. If you would like to test this, simply add a small amount of random noise to the initial conditions (on the order of 1e-8) and observe how the final solution differs after a long time period.
