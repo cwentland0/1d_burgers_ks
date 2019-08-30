@@ -12,7 +12,7 @@ Defines most of the inputs for computing the approximate solution of the Burgers
 Contains functions necessary for computing quantities related to the spatial discretization of the governing equation. This includes computing the initial conditions, precomputing the linear operator associated with the linear second- and fourth-order spatial derivative terms, computing the non-linear advection term, and computing the Jacobian of the RHS function.
 
 ### `timeSchemes.py`
-Contains functions necessary for computing quantities associated with advancing the solution in time, i.e. the temporal discretization. 
+Contains functions necessary for computing quantities associated with advancing the solution in time, i.e. the temporal discretization. This includes computing the time evolution via the explicit Runge-Kutta schemes (up to fourth-order accuracy) or the implicit linear multistep, or backwards differentiation formula (BDF) schemes (up to fourth-order accuracy). Additionally, functions for computing the BDF residuals and for organizing time stepping scheme inputs are included.  
 
 ### `onlineFuncs.py`
 Contains the approximate solution solver. Organizes initial conditions from scratch or restart file, calls time-stepping functions, stores solution and RHS function and saves it to disk, and plots time evolution of the solution.

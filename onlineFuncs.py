@@ -79,7 +79,7 @@ def computeFOM(u0,linOp,x,dt,dx,tEnd,Nt,spaceDiffParams,timeDiffParams,problem,p
 		figContourPlot = plt.figure()
 		axContourPlot = figContourPlot.add_subplot(111)
 		axContourPlot.contourf(X,T,uSave)
-		plt.savefig('./Images/contour'+problem+'_'+str(restartTime)+'_to_'+str(tEnd)+'_FOM.png')
+		plt.savefig('./Images/contour_'+problem+'_'+str(restartTime)+'_to_'+str(tEnd)+'_FOM.png')
 
 	# save solution and RHS function to disk
 	np.save(os.path.join('./Data','u_'+problem+'_'+str(restartTime)+'_to_'+str(tEnd)+'_FOM.npy'),uSave)
