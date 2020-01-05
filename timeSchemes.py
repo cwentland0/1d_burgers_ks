@@ -11,9 +11,9 @@ from scipy.sparse import identity, csc_matrix
 
 # compute residual of fully-discrete linear system with BDF temporal scheme, given guess of next time step 
 # e.g., BDF2 --> r = 1.5*u_n+1 - 2*u_n + 0.5*u_n-1 - dt*R(u_n+1)
-def computeResidualBDF(uMat,linOp,dx,dt,spaceDiffParams,schemeSwitch):
+def computeResidualBDF(uMat,linOp,bc_vec,source_term,dx,dt,spaceDiffParams,schemeSwitch):
 
-	RHS = computeNonlinRHS(uMat[0,:],dx,spaceDiffParams) + np.dot(linOp,uMat[0,:].T).T
+	RHS = computeNonlinRHS(uMat[0,:],dx,spaceDiffParams) + np.dot(linOp,uMat[0,:].T).T + bc_vec + source_term
 
 	if schemeSwitch == 1:
 		timeDiffOp = uMat[0,:]         - uMat[1,:]
@@ -34,10 +34,10 @@ def computeResidualBDF(uMat,linOp,dx,dt,spaceDiffParams,schemeSwitch):
 # Newton's method: for linear system r(u) = 0, solve [dr(u_i)/du]*du = -r(u_i)
 # 	Update solution, u_i+1 = u_i + du
 # 	Iterate to converged r =~ 0, or max iteration reached
-def advanceTimeStepBDF(uMat,timeDiffParams,spaceDiffParams,dt,dx,linOp,schemeSwitch):
+def advanceTimeStepBDF(uMat,timeDiffParams,spaceDiffParams,dt,dx,linOp,bc_vec,source_term,schemeSwitch):
 
 	timeDiffOpDeriv = csc_matrix(timeDiffParams['BDFTimeDerivCoeff']*identity(uMat.shape[1],dtype=np.float64))
-	residual, RHS = computeResidualBDF(uMat,linOp,dx,dt,spaceDiffParams,schemeSwitch)
+	residual, RHS = computeResidualBDF(uMat,linOp,bc_vec,source_term,dx,dt,spaceDiffParams,schemeSwitch)
 	residualNorm = 1.e2
 
 	iteration = 0
@@ -52,7 +52,7 @@ def advanceTimeStepBDF(uMat,timeDiffParams,spaceDiffParams,dt,dx,linOp,schemeSwi
 		du = spsolve(residualJacob,-residual)
 		uMat[0,:] += du
 
-		residual, RHS = computeResidualBDF(uMat,linOp,dx,dt,spaceDiffParams,schemeSwitch)
+		residual, RHS = computeResidualBDF(uMat,linOp,bc_vec,source_term,dx,dt,spaceDiffParams,schemeSwitch)
 		residualNorm = np.linalg.norm(residual,ord=2)
 		print('BDF inner iteration '+str(iteration)+': ' + str(residualNorm))
 
@@ -61,16 +61,36 @@ def advanceTimeStepBDF(uMat,timeDiffParams,spaceDiffParams,dt,dx,linOp,schemeSwi
 	return uMat, RHS
 
 # compute explicit solution to Jameson's low-memory Runge-Kutta temporal scheme
-def advanceTimeStepExplicitRungeKutta(u,RHS,linOp,dx,dt,spaceDiffParams,timeDiffParams):
+def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,dx,dt,spaceDiffParams,timeDiffParams,romParams):
 
 	un = u.copy()
+	an = a.copy()
+	VMat = romParams['VMat']
+	mzEps = romParams['mzEps']
+	mzTau = romParams['mzTau']
 	rkCoeffs = timeDiffParams['rkCoeffs']
-	for rk in range(0,rkCoeffs.shape[0],1):
-		u = un + dt*rkCoeffs[rk]*RHS
-		RHS_nonlin = computeNonlinRHS(u,dx,spaceDiffParams)
-		RHS = RHS_nonlin + np.dot(linOp,u.T).T
 
-	return u, RHS
+	for rk in range(0,rkCoeffs.shape[0],1):
+		if simType == 'FOM':
+			u = un + dt*rkCoeffs[rk]*RHS
+
+		elif (simType == 'PODG'):
+			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,RHS.T).T
+			u = np.dot(VMat,a.T).T 
+
+		elif (simType == 'PODG-MZ'):
+			orthoProj = RHS - np.dot(VMat,np.dot(VMat.T,RHS.T)).T
+			uPert = u + mzEps*orthoProj 
+			RHSPert_nonlin = computeNonlinRHS(uPert,dx,spaceDiffParams)
+			RHSPert = RHSPert_nonlin + np.dot(linOp,uPert.T).T + bc_vec + source_term 
+			closure = (RHSPert - RHS)/mzEps
+			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + mzTau*closure).T).T
+			u = np.dot(VMat,a.T).T 
+
+		RHS_nonlin = computeNonlinRHS(u,dx,spaceDiffParams)
+		RHS = RHS_nonlin + np.dot(linOp,u.T).T + bc_vec + source_term
+
+	return u, a, RHS
 
 # organize parameters for temporal schemes
 def storeTimeDiffParams(timeDiffScheme,timeOrdAcc):
@@ -79,7 +99,7 @@ def storeTimeDiffParams(timeDiffScheme,timeOrdAcc):
 
 	# BDF scheme parameters
 	if timeDiffScheme == 'BDF':
-		maxIterations = 50						# maximum iterations until termination of iterative solution
+		maxIterations = 100						# maximum iterations until termination of iterative solution
 		residualTolerance = 1.e-10				# residual convergence threshold
 		uNp1Coeffs = [1., 1.5, 11./6., 25./12.]	# coefficients of u_n+1 term in BDF residuals
 		timeDiffParams = {'maxIterations':maxIterations,'residualTolerance':residualTolerance,
