@@ -8,6 +8,7 @@ import numpy as np
 from spaceSchemes import computeNonlinRHS, computeAnalyticalRHSJacobian
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import identity, csc_matrix
+from annFuncs import extractJacobian
 
 # compute residual of fully-discrete linear system with BDF temporal scheme, given guess of next time step 
 # e.g., BDF2 --> r = 1.5*u_n+1 - 2*u_n + 0.5*u_n-1 - dt*R(u_n+1)
@@ -68,7 +69,7 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 	VMat = romParams['VMat']
 	mzEps = romParams['mzEps']
 	mzTau = romParams['mzTau']
-	rkCoeffs = timeDiffParams['rkCoeffs']
+	rkCoeffs = timeDiffParams['rkCoeffs'] 
 
 	for rk in range(0,rkCoeffs.shape[0],1):
 		if simType == 'FOM':
@@ -86,6 +87,12 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 			closure = (RHSPert - RHS)/mzEps
 			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + mzTau*closure).T).T
 			u = np.dot(VMat,a.T).T 
+
+		elif (simType == 'GMan'):
+			jacob = extractJacobian(romParams['decoder'],a)
+			a = an + dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T 
+			u = np.dot(jacob,a.T).T
+			import pdb; pdb.set_trace()
 
 		RHS_nonlin = computeNonlinRHS(u,dx,spaceDiffParams)
 		RHS = RHS_nonlin + np.dot(linOp,u.T).T + bc_vec + source_term

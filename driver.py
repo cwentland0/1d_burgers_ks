@@ -13,6 +13,7 @@ import spaceSchemes
 from timeSchemes import storeTimeDiffParams
 import onlineFuncs
 import matplotlib.pyplot as plt
+from annFuncs import extractEncoderDecoder
 
 def main():
 
@@ -20,7 +21,7 @@ def main():
 	if not os.path.exists('./Images'): os.makedirs('./Images')
 	if not os.path.exists('./RestartFiles'): os.makedirs('./RestartFiles')
 
-	simType = 'PODG-MZ'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
+	simType = 'FOM'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
 	paramBurgers = False
 
 	# governing equation selection
@@ -92,12 +93,37 @@ def main():
 	# ROM parameters
 	romSize = 10
 
-	# POD basis load
+	# ROM basis/decoders load
+	VMat = []
+	encoder = []
+	decoder = []
+	
 	if (simType in ['PODG','PODG-MZ','PODG-TCN']):
 		VMat_full = np.load('./Data/PODBasis/podBasis.npy')
 		VMat = VMat_full[:,:romSize]
-	else:
-		VMat = []
+
+
+	elif (simType in ['GMan','GMan-TCN']):
+		modelLoc = './Models/model_test_save.h5'
+		numConvLayers = 4
+		encodeFilterList = [8,16,32,64]
+		encodeKernelList = [25,25,25,25]
+		encodeStrideList = [2,4,4,4]
+		encodeActivationList = ['elu','elu','elu','elu']
+		decodeFilterList = [32,16,8,1]
+		decodeKernelList = [25,25,25,25]
+		decodeStrideList = [4,4,4,2]
+		decodeActivationList = ['elu','elu','elu','elu']
+		initDist = 'glorot_uniform'
+		denseActivation = 'elu'
+		decodeDenseInputSize = int(N/np.prod(encodeStrideList))
+
+		encoder, decoder = extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
+				encodeKernelList,encodeFilterList,encodeStrideList,encodeActivationList,
+				decodeKernelList,decodeFilterList,decodeStrideList,decodeActivationList,
+				decodeDenseInputSize,denseActivation,initDist)
+
+		import pdb; pdb.set_trace()
 
 	# MZ parameters 
 	mzEps = 1.e-5
@@ -106,9 +132,11 @@ def main():
 	# error calcs
 	fomSolLoc = './Data/u_burgers_mu1_4.3_mu2_0.021_FOM.npy'
 
-	romParams = {'fomSolLoc':fomSolLoc,'VMat':VMat,'romSize':romSize,'mzEps':mzEps,'mzTau':mzTau}
+	romParams = {'fomSolLoc':fomSolLoc,'VMat':VMat,'romSize':romSize,'encoder':encoder,'decoder':decoder,'mzEps':mzEps,'mzTau':mzTau}
 
 
+
+	############# RUNTIME FUNCS #################
 	if (not paramBurgers):
 		# create tailored output label for data
 		outputLabel = problem+'_mu1_'+str(bc_vals[0])+'_mu2_'+str(mu_2)+'_'+simType

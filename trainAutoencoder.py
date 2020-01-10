@@ -44,6 +44,7 @@ dataTrain_scaled = (dataTrain - dataTrainMin)/(dataTrainMax - dataTrainMin)
 dataValMin = np.amin(dataVal)
 dataValMax = np.amax(dataVal)
 dataVal_scaled = (dataVal - dataValMin)/(dataValMax - dataValMin)
+np.save('./Data/normData.npy',np.array([dataTrainMin,dataTrainMax]))
 
 numConvLayers = 4
 numDenseLayers = 1
@@ -68,51 +69,6 @@ decodeActivationList = ['elu','elu','elu','elu']
 decodeDenseInputSize = int(256/np.prod(encodeStrideList))
 
 denseActivation = 'elu'
-
-# def encoder():
-# 	input1 = Input(shape=dataTrain.shape[1:],name='inputEncode')
-	
-# 	model1 = Conv1D(filters=encodeFilterList[0],kernel_size=encodeKernelList[0],strides=encodeStrideList[0],padding='same',activation=encodeActivationList[0],
-# 					kernel_initializer=initializationDist,bias_initializer='zeros',name='conv0')(input1)
-# 	for convNum in range(1,numConvLayers):
-# 		model1 = Conv1D(filters=encodeFilterList[convNum],kernel_size=encodeKernelList[convNum],strides=encodeStrideList[convNum],padding='same',activation=encodeActivationList[convNum],
-# 					kernel_initializer=initializationDist,bias_initializer='zeros',name='conv'+str(convNum))(model1)
-
-# 	model1 = Flatten()(model1)
-
-# 	out = Dense(romSize,activation=denseActivation,kernel_initializer=initializationDist,bias_initializer='zeros',name='fcnConv')(model1)
-	
-# 	model = Model(input1,out)
-
-# 	return model
-
-
-# encoderModel = encoder()
-# encoderModel.summary()
-
-# import pdb; pdb.set_trace()
-
-# def decoder():
-# 	input1 = Input(shape=(romSize,),name='inputDecode')
-
-# 	model1 = Dense(decodeDenseInputSize*encodeFilterList[-1],activation=denseActivation,kernel_initializer=initializationDist,bias_initializer='zeros',name='fcnDeconv')(input1)
-
-# 	model1 = Reshape((decodeDenseInputSize,encodeFilterList[-1]))(model1)
-
-# 	model1 = UpSampling1D(decodeStrideList[0],name='upsamp0')(model1)
-# 	model1 = Conv1D(filters=decodeFilterList[0],kernel_size=decodeKernelList[0],padding='same',activation=decodeActivationList[0],
-# 					kernel_initializer=initializationDist,bias_initializer='zeros',name='deconv0')(model1)
-# 	for deconvNum in range(1,numConvLayers):
-# 		model1 = UpSampling1D(decodeStrideList[deconvNum],name='upsamp'+str(deconvNum))(model1)
-# 		model1 = Conv1D(filters=decodeFilterList[deconvNum],kernel_size=decodeKernelList[deconvNum],padding='same',activation=decodeActivationList[deconvNum],
-# 					kernel_initializer=initializationDist,bias_initializer='zeros',name='deconv'+str(deconvNum))(model1)
-
-# 	model = Model(input1,model1)
-
-# 	return model 
-
-# decoderModel = decoder()
-# decoderModel.summary()
 
 
 def CAE():
@@ -153,15 +109,10 @@ def CAE():
 	return model
 
 CAEModel = CAE()
-
-# outCAE = decoderModel(encoderModel.outputs)
-# CAEModel = Model(encoderModel.inputs,outCAE)
-
 CAEModel.summary()
 
 opt_func = Adam(lr=learn_rate,decay=decay_rate)
 CAEModel.compile(optimizer=opt_func,loss=loss_func)
-
 
 earlyStop = EarlyStopping(patience=earlyStopEpochs)
 CAEModel.fit(x=dataTrain_scaled,y=dataTrain_scaled,batch_size=batchSize,epochs=maxEpochs,

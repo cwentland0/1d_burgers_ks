@@ -3,14 +3,35 @@ from keras.layers import Input, Conv1D, Dense, Flatten, Reshape, UpSampling1D
 from keras.models import Model
 from keras import backend as K
 import tensorflow as tf
+# tf.compat.v1.enable_eager_execution()
 
-def extractJacobian(gradients,decoder,code):
 
-	codeTensor = np.reshape(code,(1,-1))
-	sess = tf.InteractiveSession()
-	sess.run(tf.initialize_all_variables())
-	jacob = sess.run(gradients,feed_dict={model.input:codeTensor})
-	ses.close()
+def arrayScaling(arr,normData,scaleFlag):
+	
+	if (scaleFlag == 1):
+		arr = (arr - normData[0])/(normData[1] - normData[0])
+	elif (scaleFlag == -1):
+		arr = arr*(normData[1] - normData[0]) + normData[0]
+	else:
+		raise ValueError('Invalid scaling flag '+str(scaleFlag))
+
+	return arr
+
+def extractJacobian(decoder,code):
+
+	# codeTensor = np.reshape(code,(1,-1))
+	# sess = tf.InteractiveSession()
+	# sess.run(tf.initialize_all_variables())
+	# sess = K.get_session()
+	# jacob = sess.run(gradients,feed_dict={decoder.input:codeTensor})
+	# sess.close()
+
+	# tf.compat.v1.enable_eager_execution()
+	with tf.GradientTape() as g:
+		inputs = tf.Variable(np.reshape(code,(1,-1)),dtype=tf.float32)
+		outputs = decoder(inputs)
+	jacob = np.squeeze(g.jacobian(outputs,inputs).numpy())
+	# tf.compat.v1.disable_eager_execution()
 
 	return jacob	
 
@@ -58,16 +79,10 @@ def extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
 
 		return model
 
-
-
 	encoder_model = encoder()
 	encoder_model.load_weights(modelLoc,by_name=True)
 
 	decoder_model = decoder()
 	decoder_model.load_weights(modelLoc,by_name=True)
 
-	decoderJacobian = K.gradients(decoder_model.output,decoder_model.input)
-
-	import pdb; pdb.set_trace()
-
-	return encoder_model, decoder_model, decoderJacobian
+	return encoder_model, decoder_model

@@ -12,6 +12,7 @@ import time
 import timeSchemes
 from spaceSchemes import computeNonlinRHS
 
+
 def calcPlotErr(fomSol,romSol,t,outputLabel):
 
 	l2Err_time = np.sqrt(np.sum(np.square(fomSol - romSol.T),axis=0))
@@ -61,6 +62,10 @@ def computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
 
 	if (simType in ['PODG','PODG-MZ','PODG-TCN']):
 		a = np.dot(romParams['VMat'].T,u.T).T
+	elif (simType in ['GMan','GMan-TCN']):
+		encoder = romParams['encoder']
+		
+		import pdb; pdb.set_trace()
 	elif (simType == 'FOM'):
 		a = np.empty(1)
 
@@ -105,9 +110,10 @@ def computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
 		X, T = np.meshgrid(x,t)
 		figContourPlot = plt.figure()
 		axContourPlot = figContourPlot.add_subplot(111)
-		axContourPlot.contourf(X,T,uSave)
+		ctr = axContourPlot.contourf(X,T,uSave)
 		axContourPlot.set_xlabel('x')
 		axContourPlot.set_ylabel('t')
+		plt.colorbar(ctr,ax=axContourPlot)
 		plt.savefig('./Images/contour_'+outputLabel+'.png')
 
 	if (simType != 'FOM'):
