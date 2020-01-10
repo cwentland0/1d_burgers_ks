@@ -6,6 +6,8 @@ from keras.losses import mean_squared_error
 from keras.callbacks import TensorBoard, EarlyStopping
 from sklearn.model_selection import train_test_split
 import math
+import os
+import h5py
 
 # get data
 dataDir = './Data/trainingData/'
