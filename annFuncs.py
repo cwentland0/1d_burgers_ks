@@ -1,39 +1,87 @@
 import numpy as np
-from keras.layers import Input, Conv1D, Dense, Flatten, Reshape, UpSampling1D
-from keras.models import Model
-from keras import backend as K
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
+import matplotlib.pyplot as plt
 import tensorflow as tf
-# tf.compat.v1.enable_eager_execution()
+from tensorflow.keras.layers import Input, Conv1D, Dense, Flatten, Reshape, UpSampling1D
+from tensorflow.keras.models import Model
+from tensorflow.keras import backend as K
+import h5py
+import time
 
+def scaleOp(uSol,normData): 
+	uSol = (uSol - normData[0])/(normData[1] - normData[0])
+	return uSol 
 
-def arrayScaling(arr,normData,scaleFlag):
-	
-	if (scaleFlag == 1):
-		arr = (arr - normData[0])/(normData[1] - normData[0])
-	elif (scaleFlag == -1):
-		arr = arr*(normData[1] - normData[0]) + normData[0]
-	else:
-		raise ValueError('Invalid scaling flag '+str(scaleFlag))
+def invScaleOp(uSol,normData):
+	uSol = uSol*(normData[1] - normData[0]) + normData[0] 
+	return uSol
 
-	return arr
+def evalEncoder(uSol,u0,encoder,normData):
+	uEval = scaleOp(uSol - u0, normData)
+	code = np.squeeze(encoder.predict(np.array([uEval,])))
+	return code 
 
-def extractJacobian(decoder,code):
+def evalDecoder(code,u0,decoder,normData): 
+	uEval = np.squeeze(decoder.predict(np.array([code,])))
+	uSol = invScaleOp(uEval, normData) + u0
+	return uSol
 
-	# codeTensor = np.reshape(code,(1,-1))
-	# sess = tf.InteractiveSession()
-	# sess.run(tf.initialize_all_variables())
-	# sess = K.get_session()
-	# jacob = sess.run(gradients,feed_dict={decoder.input:codeTensor})
-	# sess.close()
+def evalCAE(uSol,u0,encoder,decoder,normData): 
+	uEval = (uSol - u0 - normData[0])/(normData[1] - normData[0])
+	code = np.squeeze(encoder.predict(np.array([uEval,])))
+	uEval = np.squeeze(decoder.predict(np.array([code,])))
+	uSol = uEval*(normData[1] - normData[0]) + u0 + normData[0]
+	return uSol
 
-	# tf.compat.v1.enable_eager_execution()
+def extractJacobian(decoder,code): 
+
 	with tf.GradientTape() as g:
 		inputs = tf.Variable(np.reshape(code,(1,-1)),dtype=tf.float32)
 		outputs = decoder(inputs)
-	jacob = np.squeeze(g.jacobian(outputs,inputs).numpy())
-	# tf.compat.v1.disable_eager_execution()
+
+	jacob = np.squeeze(g.jacobian(outputs,inputs).numpy()) 
 
 	return jacob	
+
+def extractNumJacob(decoder,code,stepSize):
+	uSol = np.squeeze(decoder.predict(np.array([code,]))) 
+	numJacob = np.zeros((uSol.shape[0],code.shape[0]),dtype=np.float64)
+	for elem in range(0,code.shape[0]):
+		tempCode = code.copy()
+		tempCode[elem] = tempCode[elem] + stepSize 
+		output = np.squeeze(decoder.predict(np.array([tempCode,])))
+		numJacob[:,elem] = (output - uSol).T/stepSize
+
+	return numJacob
+
+def computeProjField_ann(encoder,decoder,fomSolLoc,u0,normDataLoc,plotFlag,saveCode): 
+	fomSol = np.load(fomSolLoc) 
+	normData = np.load(normDataLoc)
+
+	numPoints, numSamps = fomSol.shape
+
+	codeSol = np.zeros((encoder.output.shape[1],numSamps),dtype=np.float64)	
+	fomSol_proj = np.zeros(fomSol.shape,dtype=np.float64) 
+
+	for t in range(0,numSamps):
+		codeSol[:,t] = evalEncoder(fomSol[:,t],u0,encoder,normData)
+		fomSol_proj[:,t] = evalDecoder(codeSol[:,t],u0,encoder,decoder,normData)
+
+
+	if plotFlag:
+		t = np.linspace(0,1,numSamps)  
+		x = np.linspace(0,1,numPoints) 
+		X,T = np.meshgrid(x,t) 
+
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		ax.contourf(X,T,fomSol_proj.T) 
+		plt.savefig('./Images/projField.png')
+
+	if saveCode:
+		codeSaveName = input("Input name to save latent space code history file: ")
+		np.save('./Data/'+codeSaveName+'.npy')
 
 
 def extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
@@ -86,3 +134,30 @@ def extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
 	decoder_model.load_weights(modelLoc,by_name=True)
 
 	return encoder_model, decoder_model
+
+
+def breakCAE(CAELoc,saveLoc,modelLabel):
+
+	N = 256
+	romSize = 10
+
+	numConvLayers = 4
+	encodeFilterList = [8,16,32,64]
+	encodeKernelList = [25,25,25,25]
+	encodeStrideList = [2,4,4,4]
+	encodeActivationList = ['elu','elu','elu','elu']
+	decodeFilterList = [32,16,8,1]
+	decodeKernelList = [25,25,25,25]
+	decodeStrideList = [4,4,4,2]
+	decodeActivationList = ['elu','elu','elu','linear']
+	initDist = 'glorot_uniform'
+	denseActivation = 'elu'
+	decodeDenseInputSize = int(N/np.prod(encodeStrideList))
+
+	encoder, decoder = extractEncoderDecoder(CAELoc,N,numConvLayers,romSize,
+				encodeKernelList,encodeFilterList,encodeStrideList,encodeActivationList,
+				decodeKernelList,decodeFilterList,decodeStrideList,decodeActivationList,
+				decodeDenseInputSize,denseActivation,initDist) 
+
+	encoder.save(os.path.join(saveLoc,'encoder_'+modelLabel+'.h5'))
+	decoder.save(os.path.join(saveLoc,'decoder_'+modelLabel+'.h5'))

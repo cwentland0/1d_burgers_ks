@@ -8,12 +8,15 @@ Date: August 2019
 
 import math
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
 import numpy as np
 import spaceSchemes
 from timeSchemes import storeTimeDiffParams
-import onlineFuncs
+from onlineFuncs import computeSol, computeProjSol
+import tensorflow as tf
 import matplotlib.pyplot as plt
-from annFuncs import extractEncoderDecoder
+from annFuncs import extractEncoderDecoder 
+from tensorflow.keras.models import load_model
 
 def main():
 
@@ -21,15 +24,25 @@ def main():
 	if not os.path.exists('./Images'): os.makedirs('./Images')
 	if not os.path.exists('./RestartFiles'): os.makedirs('./RestartFiles')
 
-	simType = 'FOM'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
+	simType = 'GMan'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
 	paramBurgers = False
+	calcProj = False
 
 	# governing equation selection
 	problem = 'burgers'		# 'burgers': Burgers' equation, 'ks': Kuramoto-Sivashinsky equation
-	saveSol = True
+	
+	# output parameters 
+	outputDir = 'TCNTraining_POD_k10'; outputLoc = os.path.join('./Data',outputDir) # where data files are written to
+	if not os.path.exists(outputLoc): os.makedirs(outputLoc)
+
+	saveSol = False
 	saveRHS = False
-	plotSol = True 		# plot the FOM solution (can take a bit for fine grids/time sampling, long time evolution)
-	plotSnaps = False
+	saveCode = False
+	plotSol = False 		# plot time-history contours (can take a bit for fine grids/time sampling, long time evolution)
+	plotSnaps = True  		# plot real-time line plots
+	calcErr = False 
+	compareType = 'u'     # either 'u' or 'RHS' for now
+
 
 	# temporal and spatial derivative approximates
 	# note: linear second-order and fourth-order derivatives are always computed by central schemes
@@ -40,9 +53,14 @@ def main():
 										# note: upwind scheme only accepts 1; central scheme only accepts 2,4
 	linOrdAcc = 2 						# 2, 4 (second-order or fourth-order accuracy)
 
+	# parameterized Burgers'
+	param_mult = 0.02 
+	mu_1 = 4.3
+	mu_2 = 0.021
+
 	# boundary conditions
 	bound_cond = 'dirichlet'
-	bc_vals = [4.3,1]
+	bc_vals = [mu_1,1]
 
 	spaceDiffParams = {'nonlinDiffScheme':nonlinDiffScheme,'nonlinOrdAcc':nonlinOrdAcc,'linOrdAcc':linOrdAcc,'bound_cond':bound_cond,'bc_vals':bc_vals}
 	timeDiffParams = storeTimeDiffParams(timeDiffScheme,timeOrdAcc)
@@ -74,14 +92,10 @@ def main():
 	Nt = int(round(tEnd/dt)) 			# total number of time steps from t = 0 to tEnd
 	sampRate = 1 						# time step interval for saving solution to disk
 
-	# parameterized Burgers'
-	param_mult = 0.02
-	mu_2 = 0.021
-	source_term = param_mult*np.exp(mu_2*x)
-
 	# compute discrete linear operator matrix
 	viscosity = 0.																# dissipation coefficient
 	linOp, bc_vec = spaceSchemes.precompLinOp(problem,spaceDiffParams,N,dx,viscosity) 		# compute linear dissipation operator
+	source_term = param_mult*np.exp(mu_2*x)
 
 	# param study values
 	mu_1_vals = 4.25 + (1.25/9.)*np.linspace(0,9,10)
@@ -90,21 +104,36 @@ def main():
 	MU_1_vec = MU_1.flatten(order='F')
 	MU_2_vec = MU_2.flatten(order='F')
 
-	# ROM parameters
+	# ROM parameters 
 	romSize = 10
 
 	# ROM basis/decoders load
 	VMat = []
 	encoder = []
-	decoder = []
+	decoder = [] 
+	normData = []
 	
-	if (simType in ['PODG','PODG-MZ','PODG-TCN']):
-		VMat_full = np.load('./Data/PODBasis/podBasis.npy')
+	if (simType in ['PODG','PODG-MZ','PODG-TCN']): 
+		modelLabel = 'param_samp1'
+		VMat_full = np.load('./Data/PODBasis/podBasis_'+modelLabel+'.npy')
 		VMat = VMat_full[:,:romSize]
-
+		normData = np.load('./Data/PODBasis/normData_'+modelLabel+'.npy')
 
 	elif (simType in ['GMan','GMan-TCN']):
-		modelLoc = './Models/model_test_save.h5'
+		# modelLabel = 'k10_param_kookjin'
+
+		# decoderLoc = './Models/decoder_'+modelLabel+'.h5'
+		# encoderLoc = './Models/encoder_'+modelLabel+'.h5'
+		# normLoc  = './Data/normData_'+modelLabel+'.npy'
+
+		# normData = np.load(normLoc) 
+		# encoder = load_model(encoderLoc,compile=False)
+		# decoder = load_model(decoderLoc,compile=False)
+
+		normLoc = './Data/normData_k10_param_kookjin.npy'
+		modelLoc = './Models/CAE_k10_param_kookjin.h5'
+		# modelLoc = './Models/CAE_k10_param_halfFilters.h5' 
+
 		numConvLayers = 4
 		encodeFilterList = [8,16,32,64]
 		encodeKernelList = [25,25,25,25]
@@ -113,7 +142,7 @@ def main():
 		decodeFilterList = [32,16,8,1]
 		decodeKernelList = [25,25,25,25]
 		decodeStrideList = [4,4,4,2]
-		decodeActivationList = ['elu','elu','elu','elu']
+		decodeActivationList = ['elu','elu','elu','linear']
 		initDist = 'glorot_uniform'
 		denseActivation = 'elu'
 		decodeDenseInputSize = int(N/np.prod(encodeStrideList))
@@ -123,29 +152,55 @@ def main():
 				decodeKernelList,decodeFilterList,decodeStrideList,decodeActivationList,
 				decodeDenseInputSize,denseActivation,initDist)
 
-		import pdb; pdb.set_trace()
+		normData = np.load(normLoc)
+
+		# import pdb; pdb.set_trace()
 
 	# MZ parameters 
 	mzEps = 1.e-5
 	mzTau = 1
 
-	# error calcs
-	fomSolLoc = './Data/u_burgers_mu1_4.3_mu2_0.021_FOM.npy'
+	# FOM solution for error calcs 
+	if (simType != 'FOM'):
+		fomDir = './Data/trainingData'
+		
+		if (calcProj):
+			fomSolLoc = [os.path.join(fomDir,'u_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy'),
+						 os.path.join(fomDir,'RHS_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy')]
+			if (not (os.path.isfile(fomSolLoc[0]) and os.path.isfile(fomSolLoc[1]))): raise ValueError('FOM files not found')
+		else:
+			if (compareType == 'u'): 
+				fomSolLoc = os.path.join(fomDir,'u_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy')
+			elif (compareType == 'RHS'):
+				fomSolLoc = os.path.join(fomDir,'RHS_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy')
+			else:
+				raise ValueError("Invalid comparison flag")
+			if (not os.path.isfile(fomSolLoc)): raise ValueError('FOM file not found at '+fomSolLoc)
 
-	romParams = {'fomSolLoc':fomSolLoc,'VMat':VMat,'romSize':romSize,'encoder':encoder,'decoder':decoder,'mzEps':mzEps,'mzTau':mzTau}
-
+		romParams = {'fomSolLoc':fomSolLoc,'VMat':VMat,'romSize':romSize,'u0':u0,
+					'encoder':encoder,'decoder':decoder,'normData':normData,
+					'mzEps':mzEps,'mzTau':mzTau}
 
 
 	############# RUNTIME FUNCS #################
-	if (not paramBurgers):
+	if (not paramBurgers): 
+		print("Running single simulation, mu1: "+str(mu_1)+", mu2: "+str(mu_2))
+
 		# create tailored output label for data
-		outputLabel = problem+'_mu1_'+str(bc_vals[0])+'_mu2_'+str(mu_2)+'_'+simType
+		outputLabel = problem+'_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_'+simType
 
-		# run full-order model simulation
-		onlineFuncs.computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
-			spaceDiffParams,timeDiffParams,romParams,problem,plotSol,sampRate,plotSnaps,restartFlag,restartFile,outputLabel,saveSol,saveRHS) 
+		if calcProj:
+			computeProjSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,
+				spaceDiffParams,romParams,plotSol,sampRate,plotSnaps,outputLabel,
+				saveSol,saveRHS,saveCode,calcErr,outputLoc)
+		else:
+			# run full-order model simulation
+			computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
+				spaceDiffParams,timeDiffParams,romParams,plotSol,sampRate,plotSnaps,
+				restartFlag,restartFile,outputLabel,saveSol,saveRHS,calcErr,outputLoc,compareType) 
+
 	else:
-
+		print("Running parameterized barrage")
 		for paramIter,mu_1 in enumerate(MU_1_vec):
 			# recompute source term and spatial differentiation operators given parameter set
 			mu_2 = MU_2_vec[paramIter]
@@ -153,9 +208,25 @@ def main():
 			spaceDiffParams['bc_vals'][0] = mu_1
 			linOp, bc_vec = spaceSchemes.precompLinOp(problem,spaceDiffParams,N,dx,viscosity)
 
-			outputLabel = problem+'_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_'+simType
-			onlineFuncs.computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
-				spaceDiffParams,timeDiffParams,romParams,problem,plotSol,sampRate,plotSnaps,restartFlag,restartFile,outputLabel,saveSol,saveRHS) 
+			outputLabel = problem+'_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_'+simType 
+
+			if (simType != 'FOM'):
+				if (compareType == 'u'): 
+					fomSolLoc = os.path.join(fomDir,'u_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy')
+				elif (compareType == 'RHS'):
+					fomSolLoc = os.path.join(fomDir,'RHS_burgers_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_FOM.npy')
+				else:
+					raise ValueError("Invalid comparison flag")
+				if (not os.path.isfile(fomSolLoc)): raise ValueError('FOM file not found at '+fomSolLoc)
+
+			if calcProj: 
+				computeProjSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,
+					spaceDiffParams,romParams,plotSol,sampRate,plotSnaps,outputLabel,
+					saveSol,saveRHS,saveCode,calcErr,outputLoc)
+			else: 
+				computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
+					spaceDiffParams,timeDiffParams,romParams,plotSol,sampRate,plotSnaps,
+					restartFlag,restartFile,outputLabel,saveSol,saveRHS,calcErr,outputLoc,compareType) 
 
 if __name__ == "__main__":
 	main()

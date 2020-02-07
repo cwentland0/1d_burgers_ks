@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 dataDir = './Data/trainingData/'
 basisDir = './Data/PODBasis/'
 
-calcFlag = False
-plotFlag = True
+calcFlag = True
+plotFlag = False
 
 mu_1_vals = 4.25 + (1.25/9.)*np.linspace(0,9,10)
 mu_2_vals = 0.015 + (0.015/7)*np.linspace(0,7,8)
@@ -20,12 +20,35 @@ if calcFlag:
 		dataLoad = np.load(dataDir+outputLabel+'.npy')
 		if (paramIter == 0):
 			dataFull = dataLoad
-		else:
+		else: 
 			dataFull = np.append(dataFull,dataLoad,axis=1)
 
-	u_vecs, s_vals, _ = np.linalg.svd(dataFull)
-	np.save(basisDir+'podBasis.npy',u_vecs)
-	np.save(basisDir+'podSVals.npy',s_vals)
+	# dataFull -= 1. # data centering about initial condition
+
+	# # append zero vector to induce IC consistency
+	# zeroVec = np.zeros((256,1),dtype=np.float64)
+	# dataFull = np.append(dataFull,zeroVec,axis=1)
+
+	# # scale data
+	dataTrainMin = np.amin(dataFull)
+	dataTrainMax = np.amax(dataFull)
+	normData = np.array([dataTrainMin, dataTrainMax])
+	# dataFull = (dataFull - dataTrainMin)/(dataTrainMax - dataTrainMin)
+
+	modelLabel = input("Input model label: ")
+
+	AAT = np.dot(dataFull,dataFull.T)
+
+	s_vals, u_vecs = np.linalg.eig(AAT) 
+
+	idx = s_vals.argsort()[::-1] 
+	s_vals = s_vals[idx]
+	u_vecs = u_vecs[:,idx] 
+	s_vals = np.sqrt(s_vals)
+	
+	np.save(basisDir+'normData_'+modelLabel+'.npy',normData)
+	np.save(basisDir+'podBasis_'+modelLabel+'.npy',u_vecs)
+	np.save(basisDir+'podSVals_'+modelLabel+'.npy',s_vals)
 
 if plotFlag:
 	if 's_vals' not in locals():

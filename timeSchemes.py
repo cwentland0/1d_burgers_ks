@@ -8,7 +8,9 @@ import numpy as np
 from spaceSchemes import computeNonlinRHS, computeAnalyticalRHSJacobian
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import identity, csc_matrix
-from annFuncs import extractJacobian
+from annFuncs import extractJacobian, evalDecoder, scaleOp, invScaleOp, extractNumJacob
+from podFuncs import evalPODLift 
+import time
 
 # compute residual of fully-discrete linear system with BDF temporal scheme, given guess of next time step 
 # e.g., BDF2 --> r = 1.5*u_n+1 - 2*u_n + 0.5*u_n-1 - dt*R(u_n+1)
@@ -67,8 +69,6 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 	un = u.copy()
 	an = a.copy()
 	VMat = romParams['VMat']
-	mzEps = romParams['mzEps']
-	mzTau = romParams['mzTau']
 	rkCoeffs = timeDiffParams['rkCoeffs'] 
 
 	for rk in range(0,rkCoeffs.shape[0],1):
@@ -76,23 +76,29 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 			u = un + dt*rkCoeffs[rk]*RHS
 
 		elif (simType == 'PODG'):
-			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,RHS.T).T
-			u = np.dot(VMat,a.T).T 
+			a_unscaled = dt*rkCoeffs[rk]*np.dot(VMat.T,RHS.T).T
+			a = an + scaleOp(a_unscaled,romParams['normData'])
+			u = evalPODLift(a,romParams['u0'],romParams['VMat'],romParams['normData'])
 
 		elif (simType == 'PODG-MZ'):
 			orthoProj = RHS - np.dot(VMat,np.dot(VMat.T,RHS.T)).T
-			uPert = u + mzEps*orthoProj 
+			uPert = u + romParams['mzEps']*orthoProj 
 			RHSPert_nonlin = computeNonlinRHS(uPert,dx,spaceDiffParams)
 			RHSPert = RHSPert_nonlin + np.dot(linOp,uPert.T).T + bc_vec + source_term 
-			closure = (RHSPert - RHS)/mzEps
-			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + mzTau*closure).T).T
+			closure = (RHSPert - RHS)/romParams['mzEps']
+			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + romParams['mzTau']*closure).T).T
 			u = np.dot(VMat,a.T).T 
 
 		elif (simType == 'GMan'):
-			jacob = extractJacobian(romParams['decoder'],a)
-			a = an + dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T 
-			u = np.dot(jacob,a.T).T
-			import pdb; pdb.set_trace()
+			# jacob = extractJacobian(romParams['decoder'],a) 
+			jacob = extractNumJacob(romParams['decoder'],a,1.e-3)
+
+			a_unscaled = dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T  		# use scale op here as pinv of inv scale is scale op
+			a = an + scaleOp(a_unscaled,romParams['normData']) 
+			# jacob = extractJacobian(romParams['decoder'],a) 
+			# u, jacob = extractNumJacob(romParams['decoder'],a,1.e-3)
+			# u = invScaleOp(u,romParams['normData'])
+			u = evalDecoder(a,romParams['u0'],romParams['decoder'],romParams['normData']) 
 
 		RHS_nonlin = computeNonlinRHS(u,dx,spaceDiffParams)
 		RHS = RHS_nonlin + np.dot(linOp,u.T).T + bc_vec + source_term
