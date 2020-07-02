@@ -24,21 +24,21 @@ def main():
 	if not os.path.exists('./Images'): os.makedirs('./Images')
 	if not os.path.exists('./RestartFiles'): os.makedirs('./RestartFiles')
 
-	simType = 'GMan'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
+	simType = 'FOM'  # 'FOM', 'PODG', 'PODG-MZ', 'PODG-TCN', 'GMan', 'GMan-TCN'
 	paramBurgers = False
 	calcProj = False
 
 	# governing equation selection
-	problem = 'burgers'		# 'burgers': Burgers' equation, 'ks': Kuramoto-Sivashinsky equation
+	problem = 'ks'		# 'burgers': Burgers' equation, 'ks': Kuramoto-Sivashinsky equation
 	
 	# output parameters 
-	outputDir = 'TCNTraining_POD_k10'; outputLoc = os.path.join('./Data',outputDir) # where data files are written to
+	outputDir = ''; outputLoc = os.path.join('./Data',outputDir) # where data files are written to
 	if not os.path.exists(outputLoc): os.makedirs(outputLoc)
 
 	saveSol = False
 	saveRHS = False
 	saveCode = False
-	plotSol = False 		# plot time-history contours (can take a bit for fine grids/time sampling, long time evolution)
+	plotSol = True 		# plot time-history contours (can take a bit for fine grids/time sampling, long time evolution)
 	plotSnaps = True  		# plot real-time line plots
 	calcErr = False 
 	compareType = 'u'     # either 'u' or 'RHS' for now
@@ -46,10 +46,10 @@ def main():
 
 	# temporal and spatial derivative approximates
 	# note: linear second-order and fourth-order derivatives are always computed by central schemes
-	timeDiffScheme = 'RK'				# 'BDF': backwards differentiation (implicit), 'RK': Runge-Kutta (explicit) 
-	timeOrdAcc = 4						# 1-4 (first-order to fourth-order accuracy)
-	nonlinDiffScheme = 'upwind'		# 'upwind': upwind scheme, 'central': central scheme
-	nonlinOrdAcc = 1					# 1,2,4 (first-order to third-order accuracy)
+	timeDiffScheme = 'BDF'				# 'BDF': backwards differentiation (implicit), 'RK': Runge-Kutta (explicit) 
+	timeOrdAcc = 2						# 1-4 (first-order to fourth-order accuracy)
+	nonlinDiffScheme = 'central'		# 'upwind': upwind scheme, 'central': central scheme
+	nonlinOrdAcc = 2					# 1,2,4 (first-order to third-order accuracy)
 										# note: upwind scheme only accepts 1; central scheme only accepts 2,4
 	linOrdAcc = 2 						# 2, 4 (second-order or fourth-order accuracy)
 
@@ -59,27 +59,27 @@ def main():
 	mu_2 = 0.021
 
 	# boundary conditions
-	bound_cond = 'dirichlet'
+	bound_cond = 'periodic'
 	bc_vals = [mu_1,1]
 
 	spaceDiffParams = {'nonlinDiffScheme':nonlinDiffScheme,'nonlinOrdAcc':nonlinOrdAcc,'linOrdAcc':linOrdAcc,'bound_cond':bound_cond,'bc_vals':bc_vals}
 	timeDiffParams = storeTimeDiffParams(timeDiffScheme,timeOrdAcc)
 
 	# spatial domain settings
-	N = 256							# number of spatial points for finite-difference discretization
+	N = 512							# number of spatial points for finite-difference discretization
 	xi = 0.0						# x-coordinate of 'left' boundary
-	xf = 100. 				# x-coordinate of 'right' (periodic) boundary
+	xf = 32*math.pi 				# x-coordinate of 'right' (periodic) boundary
 	dx = (xf-xi)/float(N-1)			# uniform distance between spatial points
 	x = np.linspace(xi,xf,N) 	# vector of spatial points
 
 	# set initial conditions
-	ICType = 'uniform' 									# 'turbulent': mock-turbulent/Burgulence 
+	ICType = 'mixedSinCos' 									# 'turbulent': mock-turbulent/Burgulence 
 															# 'sin': sine wave
 															# 'mixedSinCos': product of cosine and offset sine 
 	unif_val = 1.
 	randSeed = 7											# fixed seed for RNG in 'turbulence' IC
 	numWaves = 12											# number of waves in 'turbulence' IC
-	angFreq = 1. 										# angular frequency for 'sin' or mixedSinCos' ICs 
+	angFreq = 1./16. 										# angular frequency for 'sin' or mixedSinCos' ICs 
 	u0 = spaceSchemes.setICs(ICType,x,unif_val,randSeed,numWaves,angFreq)	# initial condition field
 
 	# temporal integration parameters
@@ -87,15 +87,16 @@ def main():
 	restartFile = 'restart_ks_8000' 			# name of restart npy file, sans file extension
 										# note: I just manually create restart files from solution save data
 										# 	Just append the iteration number and time to the beginning of the snapshot array and save
-	tEnd = 35. 						# end time of simulation
-	dt = 0.07 							# time step
+	tEnd = 150 						# end time of simulation
+	dt = 0.01 							# time step
 	Nt = int(round(tEnd/dt)) 			# total number of time steps from t = 0 to tEnd
-	sampRate = 1 						# time step interval for saving solution to disk
+	sampRate = 10 						# time step interval for saving solution to disk
 
 	# compute discrete linear operator matrix
-	viscosity = 0.																# dissipation coefficient
+	viscosity = 1.																# dissipation coefficient
 	linOp, bc_vec = spaceSchemes.precompLinOp(problem,spaceDiffParams,N,dx,viscosity) 		# compute linear dissipation operator
-	source_term = param_mult*np.exp(mu_2*x)
+	source_term = 0.0*x
+	# source_term = param_mult*np.exp(mu_2*x)
 
 	# param study values
 	mu_1_vals = 4.25 + (1.25/9.)*np.linspace(0,9,10)
@@ -120,39 +121,39 @@ def main():
 		normData = np.load('./Data/PODBasis/normData_'+modelLabel+'.npy')
 
 	elif (simType in ['GMan','GMan-TCN']):
-		# modelLabel = 'k10_param_kookjin'
+		modelLabel = 'k10_param_kookjin'
 
-		# decoderLoc = './Models/decoder_'+modelLabel+'.h5'
-		# encoderLoc = './Models/encoder_'+modelLabel+'.h5'
-		# normLoc  = './Data/normData_'+modelLabel+'.npy'
+		decoderLoc = './Models/decoder_'+modelLabel+'.h5'
+		encoderLoc = './Models/encoder_'+modelLabel+'.h5'
+		normLoc  = './Data/normData_'+modelLabel+'.npy'
 
-		# normData = np.load(normLoc) 
-		# encoder = load_model(encoderLoc,compile=False)
-		# decoder = load_model(decoderLoc,compile=False)
+		normData = np.load(normLoc) 
+		encoder = load_model(encoderLoc,compile=False)
+		decoder = load_model(decoderLoc,compile=False)
 
-		normLoc = './Data/normData_k10_param_kookjin.npy'
-		modelLoc = './Models/CAE_k10_param_kookjin.h5'
-		# modelLoc = './Models/CAE_k10_param_halfFilters.h5' 
+		# normLoc = './Data/normData_k10_param_kookjin.npy'
+		# modelLoc = './Models/CAE_k10_param_kookjin.h5'
+		# # modelLoc = './Models/CAE_k10_param_halfFilters.h5' 
 
-		numConvLayers = 4
-		encodeFilterList = [8,16,32,64]
-		encodeKernelList = [25,25,25,25]
-		encodeStrideList = [2,4,4,4]
-		encodeActivationList = ['elu','elu','elu','elu']
-		decodeFilterList = [32,16,8,1]
-		decodeKernelList = [25,25,25,25]
-		decodeStrideList = [4,4,4,2]
-		decodeActivationList = ['elu','elu','elu','linear']
-		initDist = 'glorot_uniform'
-		denseActivation = 'elu'
-		decodeDenseInputSize = int(N/np.prod(encodeStrideList))
+		# numConvLayers = 4
+		# encodeFilterList = [8,16,32,64]
+		# encodeKernelList = [25,25,25,25]
+		# encodeStrideList = [2,4,4,4]
+		# encodeActivationList = ['elu','elu','elu','elu']
+		# decodeFilterList = [32,16,8,1]
+		# decodeKernelList = [25,25,25,25]
+		# decodeStrideList = [4,4,4,2]
+		# decodeActivationList = ['elu','elu','elu','linear']
+		# initDist = 'glorot_uniform'
+		# denseActivation = 'elu'
+		# decodeDenseInputSize = int(N/np.prod(encodeStrideList))
 
-		encoder, decoder = extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
-				encodeKernelList,encodeFilterList,encodeStrideList,encodeActivationList,
-				decodeKernelList,decodeFilterList,decodeStrideList,decodeActivationList,
-				decodeDenseInputSize,denseActivation,initDist)
+		# encoder, decoder = extractEncoderDecoder(modelLoc,N,numConvLayers,romSize,
+		# 		encodeKernelList,encodeFilterList,encodeStrideList,encodeActivationList,
+		# 		decodeKernelList,decodeFilterList,decodeStrideList,decodeActivationList,
+		# 		decodeDenseInputSize,denseActivation,initDist)
 
-		normData = np.load(normLoc)
+		# normData = np.load(normLoc)
 
 		# import pdb; pdb.set_trace()
 
@@ -180,7 +181,8 @@ def main():
 		romParams = {'fomSolLoc':fomSolLoc,'VMat':VMat,'romSize':romSize,'u0':u0,
 					'encoder':encoder,'decoder':decoder,'normData':normData,
 					'mzEps':mzEps,'mzTau':mzTau}
-
+	else:
+		romParams = {}
 
 	############# RUNTIME FUNCS #################
 	if (not paramBurgers): 
@@ -188,6 +190,7 @@ def main():
 
 		# create tailored output label for data
 		outputLabel = problem+'_mu1_'+str(mu_1)+'_mu2_'+str(mu_2)+'_'+simType
+		if not os.path.exists('./Images/snaps_'+outputLabel): os.makedirs('./Images/snaps_'+outputLabel)
 
 		if calcProj:
 			computeProjSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,

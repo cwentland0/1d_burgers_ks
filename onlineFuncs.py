@@ -109,35 +109,48 @@ def computeSol(simType,u0,linOp,bc_vec,source_term,x,dt,dx,tEnd,Nt,
 		X, T = np.meshgrid(x,t)
 		figContourPlot = plt.figure()
 		axContourPlot = figContourPlot.add_subplot(111)
+		# levels = np.linspace(0,6,25)
+		# ctr = axContourPlot.contourf(X,T,uSave,levels=levels)
 		ctr = axContourPlot.contourf(X,T,uSave)
 		axContourPlot.set_xlabel('x')
 		axContourPlot.set_ylabel('t')
 		plt.colorbar(ctr,ax=axContourPlot)
 		plt.savefig('./Images/contour_'+outputLabel+'.png')
 
+	
+	if (compareType == 'u'):
+		dataPlot = uSave
+	elif (compareType == 'RHS'):
+		dataPlot = RHSSave 
+
 	if (simType != 'FOM'): 
-
 		fomSol = np.load(romParams['fomSolLoc'])
-		if (compareType == 'u'):
-			dataPlot = uSave
-		elif (compareType == 'RHS'):
-			dataPlot = RHSSave 
-
 		if calcErr: calcPlotErr(fomSol,dataPlot,t,outputLabel)
 
-		if (plotSnaps):
+	if (plotSnaps):
 
-			figLinePlot = plt.figure()
-			axLinePlot  = figLinePlot.add_subplot(111)
+		figLinePlot = plt.figure()
+		axLinePlot  = figLinePlot.add_subplot(111)
+		if (simType != 'FOM'):
 			dataMax = max(np.amax(fomSol),np.amax(dataPlot))
 			dataMin = min(np.amin(fomSol),np.amin(dataPlot)) 
-			for t in range(restartIter,Nt,sampRate):
-				axLinePlot.cla()
-				axLinePlot.plot(x,fomSol[:,t],'k')
-				axLinePlot.plot(x,dataPlot[t,:],'r')
-				axLinePlot.set_ylim([dataMin,dataMax]) 
-				plt.pause(0.01)
+		else: 
+			dataMax = np.amax(dataPlot)
+			dataMin = np.amin(dataPlot) 
 
+		for i ,t in enumerate(range(restartIter,Nt,sampRate)):
+			axLinePlot.cla()
+			if (simType != 'FOM'):
+				axLinePlot.plot(x,fomSol[:,t],'k')
+			axLinePlot.plot(x,dataPlot[t,:],'r')
+			axLinePlot.set_ylim([dataMin,dataMax])
+			axLinePlot.set_xlabel('x')
+			axLinePlot.set_ylabel('u') 
+			axLinePlot.legend(['FOM',simType],loc='upper left')
+			plt.pause(0.01)
+			plt.savefig('./Images/snaps_'+outputLabel+'/fig_'+str(i)+'.png')
+
+	# import pdb; pdb.set_trace()
 	# save solution and RHS function to disk
 	if saveSol: np.save(os.path.join(outputLoc,'u_'+outputLabel+'.npy'),uSave.T)
 	if saveRHS: np.save(os.path.join(outputLoc,'RHS_'+outputLabel+'.npy'),RHSSave.T)

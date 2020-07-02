@@ -64,9 +64,9 @@ dataFull -= 1. # data centering about initial condition
 zeroVec = np.zeros((1,256),dtype=np.float64)
 dataFull = np.append(dataFull,zeroVec,axis=0)
 # shuffle data to avoid biasing training to end of training
-dataTrain, dataVal, _, _ = train_test_split(dataFull,dataFull,test_size=valPerc,random_state=24)
 
 # scale data
+dataTrain, dataVal, _, _ = train_test_split(dataFull,dataFull,test_size=valPerc,random_state=24)
 dataTrainMin = np.amin(dataTrain)
 dataTrainMax = np.amax(dataTrain)
 dataTrain_scaled = (dataTrain - dataTrainMin)/(dataTrainMax - dataTrainMin)

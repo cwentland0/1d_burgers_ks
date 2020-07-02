@@ -44,7 +44,29 @@ def extractJacobian(decoder,code):
 
 	return jacob	
 
-def extractNumJacob(decoder,code,stepSize):
+def extractEncoderJacobian(encoder,sol): 
+
+	with tf.GradientTape() as g:
+		inputs = tf.Variable(np.reshape(sol,(1,-1)),dtype=tf.float32)
+		outputs = encoder(inputs)
+
+	jacob = np.squeeze(g.jacobian(outputs,inputs).numpy()) 
+
+	return jacob	
+
+def extractNumEncoderJacobian(encoder,sol,u0,normData,stepSize):
+	code = evalEncoder(sol,u0,encoder,normData)
+	numJacob = np.zeros((code.shape[0],sol.shape[0]),dtype=np.float64)
+	sol = scaleOp(sol - u0, normData)
+	for elem in range(0,sol.shape[0]):
+		tempSol = sol.copy()
+		tempSol[elem] = tempSol[elem] + stepSize
+		output = np.squeeze(encoder.predict(np.array([tempSol,])))
+		numJacob[:,elem] = (output - code).T/stepSize/normData[1] 
+
+	return numJacob
+
+def extractNumJacobian(decoder,code,stepSize):
 	uSol = np.squeeze(decoder.predict(np.array([code,]))) 
 	numJacob = np.zeros((uSol.shape[0],code.shape[0]),dtype=np.float64)
 	for elem in range(0,code.shape[0]):
@@ -52,6 +74,21 @@ def extractNumJacob(decoder,code,stepSize):
 		tempCode[elem] = tempCode[elem] + stepSize 
 		output = np.squeeze(decoder.predict(np.array([tempCode,])))
 		numJacob[:,elem] = (output - uSol).T/stepSize
+
+	return numJacob
+
+def extractNumJacobian_test(decoder,code,uSol,u0,normData,stepSize):
+	# uSol = np.squeeze(decoder.predict(np.array([code,])))
+	uSol = (uSol - u0 - normData[0])/normData[1]
+	uzero = np.zeros(u0.shape) 
+	normDataNoSub = np.array([0.0, 1.0])
+	numJacob = np.zeros((uSol.shape[0],code.shape[0]),dtype=np.float64)
+	for elem in range(0,code.shape[0]):
+		tempCode = code.copy()
+		tempCode[elem] = tempCode[elem] + stepSize 
+		output = evalDecoder(tempCode,uzero,decoder,normDataNoSub)
+		numJacob[:,elem] = (output - uSol).T/stepSize*normData[1]
+		# import pdb; pdb.set_trace()
 
 	return numJacob
 

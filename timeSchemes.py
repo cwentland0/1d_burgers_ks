@@ -8,7 +8,7 @@ import numpy as np
 from spaceSchemes import computeNonlinRHS, computeAnalyticalRHSJacobian
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import identity, csc_matrix
-from annFuncs import extractJacobian, evalDecoder, scaleOp, invScaleOp, extractNumJacob
+from annFuncs import extractJacobian, evalDecoder, scaleOp, invScaleOp, extractNumJacobian, extractNumJacobian_test, extractEncoderJacobian, extractNumEncoderJacobian
 from podFuncs import evalPODLift 
 import time
 
@@ -68,7 +68,6 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 
 	un = u.copy()
 	an = a.copy()
-	VMat = romParams['VMat']
 	rkCoeffs = timeDiffParams['rkCoeffs'] 
 
 	for rk in range(0,rkCoeffs.shape[0],1):
@@ -76,29 +75,45 @@ def advanceTimeStepExplicitRungeKutta(simType,u,a,RHS,linOp,bc_vec,source_term,d
 			u = un + dt*rkCoeffs[rk]*RHS
 
 		elif (simType == 'PODG'):
+			VMat = romParams['VMat']
 			a_unscaled = dt*rkCoeffs[rk]*np.dot(VMat.T,RHS.T).T
 			a = an + scaleOp(a_unscaled,romParams['normData'])
 			u = evalPODLift(a,romParams['u0'],romParams['VMat'],romParams['normData'])
 
 		elif (simType == 'PODG-MZ'):
+			VMat = romParams['VMat']
 			orthoProj = RHS - np.dot(VMat,np.dot(VMat.T,RHS.T)).T
 			uPert = u + romParams['mzEps']*orthoProj 
 			RHSPert_nonlin = computeNonlinRHS(uPert,dx,spaceDiffParams)
 			RHSPert = RHSPert_nonlin + np.dot(linOp,uPert.T).T + bc_vec + source_term 
 			closure = (RHSPert - RHS)/romParams['mzEps']
-			a = an + dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + romParams['mzTau']*closure).T).T
-			u = np.dot(VMat,a.T).T 
+			a_unscaled = dt*rkCoeffs[rk]*np.dot(VMat.T,(RHS + romParams['mzTau']*closure).T).T
+			a = an + scaleOp(a_unscaled,romParams['normData'])
+			u = evalPODLift(a,romParams['u0'],romParams['VMat'],romParams['normData'])
 
 		elif (simType == 'GMan'):
-			# jacob = extractJacobian(romParams['decoder'],a) 
-			jacob = extractNumJacob(romParams['decoder'],a,1.e-3)
 
-			a_unscaled = dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T  		# use scale op here as pinv of inv scale is scale op
-			a = an + scaleOp(a_unscaled,romParams['normData']) 
-			# jacob = extractJacobian(romParams['decoder'],a) 
-			# u, jacob = extractNumJacob(romParams['decoder'],a,1.e-3)
-			# u = invScaleOp(u,romParams['normData'])
+			# known to be correct
+			# jacob = extractNumJacobian(romParams['decoder'],a,1.e-3)
+			# a_unscaled = dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T  		# The use of scaleOp here is only valid because 
+			# 																			# 	Burgers' has one variable, so the scaling 
+			# 																			# 	operations is just constant ops on every element
+			# 																			# 	of the Jacobian matrix. NOT valid for more vars 
+			# a = an + scaleOp(a_unscaled,romParams['normData'])
+			# u = evalDecoder(a,romParams['u0'],romParams['decoder'],romParams['normData'])
+
+			# testing decoder Jacobian
+			jacob = extractNumJacobian_test(romParams['decoder'],a,u,romParams['u0'],romParams['normData'],1.e-3)
+			a = an + dt*rkCoeffs[rk]*np.dot(np.linalg.pinv(jacob),RHS.T).T 
 			u = evalDecoder(a,romParams['u0'],romParams['decoder'],romParams['normData']) 
+
+			# testing encoder Jacobian 
+			# uIn = scaleOp(u - romParams['u0'],romParams['normData'])
+			# jacobEnc = extractEncoderJacobian(romParams['encoder'],uIn)/(romParams['normData'])[1] 
+			# # jacobEnc_num = extractNumEncoderJacobian(romParams['encoder'],u,romParams['u0'],romParams['normData'],1.e-3)
+			# a = an + dt*rkCoeffs[rk]*np.dot(jacobEnc,RHS.T).T 
+			# u = evalDecoder(a,romParams['u0'],romParams['decoder'],romParams['normData'])
+			# import pdb; pdb.set_trace()
 
 		RHS_nonlin = computeNonlinRHS(u,dx,spaceDiffParams)
 		RHS = RHS_nonlin + np.dot(linOp,u.T).T + bc_vec + source_term
